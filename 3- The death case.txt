@@ -1,0 +1,183 @@
+import pygame
+import sys
+
+# Initialize Pygame
+pygame.init()
+
+# Constants
+WIDTH, HEIGHT = 800, 600
+DIMENSIONS = 5
+LIFE_FORMS = 5
+SECTION_HEIGHT = HEIGHT // DIMENSIONS
+LIFE_FORM_SIZE = 20
+SIZE_CHANGE = 5  # Amount by which the size changes on scroll
+MIN_SIZE = 5     # Minimum size for life forms
+TOTAL_SIZE = 100  # Total sum of sizes for each species
+
+# Colors
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255)]
+
+# Fonts
+font = pygame.font.SysFont(None, 24)
+
+# Create the screen
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption('Multiverse Life Forms')
+
+# LifeForm class
+class LifeForm:
+    def __init__(self, x, y, size, color, species_index):
+        self.x = x
+        self.y = y
+        self.size = size
+        self.color = color
+        self.selected = False
+        self.species_index = species_index
+
+    def draw(self, screen):
+        pygame.draw.circle(screen, self.color, (self.x, self.y), self.size)
+        size_text = font.render(f"${self.size}$", True, WHITE)
+        text_rect = size_text.get_rect(center=(self.x, self.y - self.size - 10))
+        screen.blit(size_text, text_rect)
+
+    def is_hovered(self, mouse_pos):
+        return (self.x - mouse_pos[0]) ** 2 + (self.y - mouse_pos[1]) ** 2 < self.size ** 2
+
+# Create life forms in each dimension
+life_forms = []
+for i in range(DIMENSIONS):
+    dimension_forms = []
+    for j in range(LIFE_FORMS):
+        x = WIDTH // (LIFE_FORMS + 1) * (j + 1)
+        y = SECTION_HEIGHT * i + SECTION_HEIGHT // 2
+        dimension_forms.append(LifeForm(x, y, LIFE_FORM_SIZE, COLORS[j % len(COLORS)], j))
+    life_forms.append(dimension_forms)
+
+# Message handling
+message = ""
+message_timer = 0
+
+def display_message(message_text):
+    global message, message_timer
+    message = message_text
+    message_timer = pygame.time.get_ticks()  # Start the timer
+
+def update_message():
+    global message, message_timer
+    current_time = pygame.time.get_ticks()
+    if current_time - message_timer > 2000:  # Display message for 2 seconds
+        message = ""
+
+def calculate_species_total_size(species_index):
+    total_size = 0
+    for dimension in life_forms:
+        for life_form in dimension:
+            if life_form.species_index == species_index:
+                total_size += life_form.size
+    return total_size
+
+def adjust_sizes(dimension, index, change):
+    selected_life_form = life_forms[dimension][index]
+    species_index = selected_life_form.species_index
+
+    # Cap the size change to stay within bounds
+    if change > 0:
+        max_change = min(TOTAL_SIZE - selected_life_form.size, change)
+    else:
+        max_change = min(selected_life_form.size - MIN_SIZE, change)
+
+    new_size = selected_life_form.size + max_change
+
+    # Check if the size would exceed the limit
+    if new_size > TOTAL_SIZE:
+        display_message("Cannot exceed 100")
+        return
+
+    # Apply the change to the selected life form
+    selected_life_form.size = new_size
+
+    # Calculate the total size of the species
+    current_species_total_size = calculate_species_total_size(species_index)
+
+    if current_species_total_size == 0:
+        return
+
+    # Adjust sizes of the same species in other dimensions proportionally
+    total_other_life_forms = DIMENSIONS - 1  # Exclude the current dimension
+    epsilon = 0.01  # Small epsilon to avoid division by zero or very small numbers
+    size_adjustment_ratio = (TOTAL_SIZE - selected_life_form.size) / (current_species_total_size - selected_life_form.size + epsilon)
+    
+    for dimension in life_forms:
+        for life_form in dimension:
+            if life_form.species_index == species_index and life_form != selected_life_form:
+                adjusted_size = life_form.size * size_adjustment_ratio
+                life_form.size = adjusted_size
+
+# Main loop
+running = True
+while running:
+    screen.fill(BLACK)
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        # Mouse interactions
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                for dimension in life_forms:
+                    for life_form in dimension:
+                        if life_form.is_hovered(event.pos):
+                            life_form.selected = True
+            elif event.button == 4:  # Scroll up
+                for i, dimension in enumerate(life_forms):
+                    for j, life_form in enumerate(dimension):
+                        if life_form.is_hovered(event.pos):
+                            adjust_sizes(i, j, SIZE_CHANGE)
+            elif event.button == 5:  # Scroll down
+                for i, dimension in enumerate(life_forms):
+                    for j, life_form in enumerate(dimension):
+                        if life_form.is_hovered(event.pos):
+                            adjust_sizes(i, j, -SIZE_CHANGE)
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:  # Left click release
+                for dimension in life_forms:
+                    for life_form in dimension:
+                        life_form.selected = False
+
+        elif event.type == pygame.MOUSEMOTION:
+            for dimension in life_forms:
+                for life_form in dimension:
+                    if life_form.selected:
+                        life_form.x, life_form.y = event.pos
+
+    # Draw dividing lines
+    for i in range(1, DIMENSIONS):
+        pygame.draw.line(screen, WHITE, (0, SECTION_HEIGHT * i), (WIDTH, SECTION_HEIGHT * i), 2)
+
+    # Draw dimension labels
+    for i in range(DIMENSIONS):
+        label = font.render(f"Dimension No. {i + 1}", True, WHITE)
+        screen.blit(label, (10, SECTION_HEIGHT * i + 10))
+
+    # Draw life forms
+    for dimension in life_forms:
+        for life_form in dimension:
+            life_form.draw(screen)
+
+    # Display message if there is one
+    if message:
+        message_text = font.render(message, True, RED)
+        screen.blit(message_text, (WIDTH // 2 - message_text.get_width() // 2, 10))
+
+    # Update message timer
+    update_message()
+
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
